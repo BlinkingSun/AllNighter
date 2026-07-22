@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-1.1.0}"
+VERSION="${VERSION:-1.1.1}"
 BUNDLE_ID="${BUNDLE_ID:-com.allnighter.mac}"
 APP="dist/AllNighter.app"
 

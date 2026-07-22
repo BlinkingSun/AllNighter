@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${VERSION:-1.1.0}"
+VERSION="${VERSION:-1.1.1}"
 APP="dist/AllNighter.app"
 SIGN_ID="${SIGN_ID:-Developer ID Application: Joshua Roberts (L3LP86Z6L4)}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-gcs-notary}"

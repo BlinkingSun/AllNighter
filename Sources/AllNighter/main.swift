@@ -93,9 +93,13 @@ func makeStatusIcon(isOn: Bool, lidMode: Bool, agentPhase: CGFloat? = nil,
         let gi = goldIntensity(t: t)
         if gi > 0.01 {
             NSGraphicsContext.saveGraphicsState()
+            // Carve the icon-canvas corners (small radius) so the glow can never
+            // fill them and read as a rectangle; flat edge clipping is fine.
+            let canvas = NSRect(origin: .zero, size: size).insetBy(dx: 0.25, dy: 0.25)
+            NSBezierPath(roundedRect: canvas, xRadius: 6.5, yRadius: 6.5).addClip()
             let glow = NSShadow()
             glow.shadowColor = kGoldGlow.withAlphaComponent(0.95 * gi)
-            glow.shadowBlurRadius = 4 + 3 * gi
+            glow.shadowBlurRadius = 3.2 + 2.2 * gi
             glow.shadowOffset = .zero
             glow.set()
             let ringRect = pillRect.insetBy(dx: -1.5, dy: -1.5)
