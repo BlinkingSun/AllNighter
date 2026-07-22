@@ -60,7 +60,7 @@ Base URL: `http://127.0.0.1:17893`
 
 | Method | Path | Effect | Response |
 |--------|------|--------|----------|
-| GET | `/status` | Read all modes | `{"state":"on\|off","closedLid":"on\|off","agent":"on\|off","agentIds":N,"effectiveDisplay":"on\|off","effectiveLid":"on\|off"}` |
+| GET | `/status` | Read both modes | `{"state":"on\|off","closedLid":"on\|off", …}` |
 | POST | `/on` · `/off` · `/toggle` | Display keep-awake | `{"state":"on\|off"}` |
 | POST | `/lid/on` · `/lid/off` · `/lid/toggle` | Closed-lid keep-alive | `{"closedLid":"on\|off"}` |
 
@@ -75,45 +75,25 @@ curl -s -X POST http://127.0.0.1:17893/lid/on
 > The first time closed-lid mode is enabled (via menu or HTTP) macOS shows a
 > one-time admin prompt. If nobody answers it, the enable is a no-op.
 
-## Agent switch (v1.1)
+These are *your* switches — anything you (or an assistant acting on your
+instruction, e.g. Claude driven remotely) turns on here stays on until you turn
+it off. `/status` also reports a few agent-hold fields; those belong to the
+optional agent integration below and are documented in
+[AGENT_CONTEXT.md](AGENT_CONTEXT.md).
 
-A third, **API-only** switch meant for local AI agents and long-running scripts:
-while it is held, the Mac stays awake **with the lid closed**, no matter what the
-user switches say.
+## Works with AI agents (optional)
 
 ![agent pulse](assets/pill-agent.gif)
 
-| Method | Path | Effect | Response |
-|--------|------|--------|----------|
-| POST | `/agent/on?id=X` | Hold the agent switch (adds `X` to the holder set) | `{"agent":"on","ids":N}` |
-| POST | `/agent/off?id=X` | Release holder `X` (unknown id is a no-op) | `{"agent":"on\|off","ids":N}` |
-| POST | `/agent/clear` | Release **all** holders | `{"agent":"off","ids":0}` |
-| GET | `/agent/status` | Inspect holders | `{"agent":"on\|off","ids":N,"idList":[...]}` |
+AllNighter also has a third, API-only switch built for AI coding agents. The
+companion repo **[agent-awake](https://github.com/BlinkingSun/agent-awake)** lets
+your agent automatically use AllNighter to keep the Mac awake (lid closed
+included) while it is working — and the **pulsing gold ring** shows you whenever
+an agent is doing so. Your switches always win: an agent releasing its hold never
+turns off anything you switched on.
 
-Semantics:
-
-- **Effective state is an OR**: display keep-awake runs when *user on OR agent on*;
-  closed-lid keep-alive is active when *user lid on OR agent on*. Agent **on**
-  overrides user **off** — agent **off never overrides user on**; releasing the
-  agent switch simply falls back to whatever the user switches say.
-- Holders are a **set of ids** (one per agent/session; omitted id = `default`).
-  Duplicate `on` calls with the same id collapse; the switch releases when the set
-  empties. Several agents can hold it at once without stepping on each other.
-- The pill always shows the **user** display switch. Agent activity shows as a
-  **pulsing gold ring** (1 s cycle: slow build, sharp fade, thin black contrast
-  ring exposed at the bottom of each pulse). While an agent holds the switch the
-  static yellow lid ring is not drawn — user lid state resumes visually when the
-  agent lets go.
-- The switch is **sticky** — no timeout. Escape hatches: right-click →
-  *Clear agent keep-awake*, or `curl -X POST 127.0.0.1:17893/agent/clear`. Agent
-  holds are in-memory only, so relaunching the app also clears them.
-- No admin prompt can ever originate from the agent routes; if the one-time
-  sudoers rule isn't installed yet, closed-lid enforcement silently retries and
-  `effectiveLid` reports the *desired* state (`pmset -g` is hardware truth).
-
-Turnkey integration for agents — a persistent instruction set plus Claude Code
-hooks that flip this switch automatically while an agent is working — lives in the
-companion repo **[agent-awake](https://github.com/BlinkingSun/agent-awake)**.
+Don't use AI agents? Ignore this section — nothing about it runs unless
+something calls the agent API.
 
 ## Build from source
 
