@@ -10,7 +10,7 @@ even **with the lid closed** — driven by a pill-shaped toggle and a loopback H
 | Mode | What it does | How to toggle |
 |------|--------------|---------------|
 | **Display keep-awake** | Runs `caffeinate -d -i` — blocks display sleep *and* idle system sleep. Screen stays on. Lid-close still sleeps. | **Left-click** the pill |
-| **Closed-lid keep-alive** | Sets `pmset disablesleep` — the Mac keeps running even with the **lid closed** (the screen may turn off, but the system won't sleep). | **Right-click** → *Keep awake with lid closed* |
+| **Closed-lid keep-alive** | Sets `pmset disablesleep` — the Mac keeps running even with the **lid closed** (the screen may turn off, but the system won't sleep). | **Right-click (or Control-click)** → *Keep awake with lid closed* |
 
 The pill shows state at a glance — and gains a **yellow glowing ring** whenever
 closed-lid keep-alive is on (over the green *or* gray pill):

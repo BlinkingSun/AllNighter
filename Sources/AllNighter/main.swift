@@ -92,8 +92,9 @@ final class AllNighter: NSObject, NSApplicationDelegate {
     }
 
     @objc private func handleClick(_ sender: Any?) {
-        let event = NSApp.currentEvent
-        if event?.type == .rightMouseUp {
+        // Ctrl-click is the trackpad right-click convention
+        if let event = NSApp.currentEvent,
+           event.type == .rightMouseUp || event.modifierFlags.contains(.control) {
             statusItem.menu = buildMenu()
             statusItem.button?.performClick(nil)
             statusItem.menu = nil

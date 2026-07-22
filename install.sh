@@ -24,5 +24,5 @@ echo "✅ AllNighter installed and running — look for the pill in your menu ba
 echo "   App:   $APP_DST"
 echo "   Agent: $PLIST"
 echo
-echo "Left-click the pill to keep the display awake; right-click for the"
+echo "Left-click the pill to keep the display awake; right-click (or Control-click) for the"
 echo "\"Keep awake with lid closed\" option."
