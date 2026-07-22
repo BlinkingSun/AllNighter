@@ -123,7 +123,9 @@ swift build -c release        # bare binary → .build/release/AllNighter
 ```
 
 Want to see the pill without touching your menu bar? `AllNighter --preview` renders
-each state to `/tmp/allnighter-icon-*.png`.
+each state to `/tmp/allnighter-icon-*.png`, plus the agent pulse as phase frames
+(`/tmp/allnighter-agent-user{on,off}-t*.png`) and a looping
+`/tmp/allnighter-agent-pulse.gif`.
 
 ## Uninstall
 
