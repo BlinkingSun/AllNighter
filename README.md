@@ -92,6 +92,12 @@ included) while it is working — and the **pulsing gold ring** shows you whenev
 an agent is doing so. Your switches always win: an agent releasing its hold never
 turns off anything you switched on.
 
+Since v1.2.0 agent holds are **leases**: a hold that isn't refreshed for 30
+minutes expires on its own, so an agent that crashes or is killed without
+releasing can't pin your Mac awake forever. Live agents refresh automatically
+just by re-posting their hold (the agent-awake hooks do this on every tool
+call).
+
 Don't use AI agents? Ignore this section — nothing about it runs unless
 something calls the agent API.
 

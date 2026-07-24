@@ -18,6 +18,19 @@ func resolvePort() -> NWEndpoint.Port {
     return kDefaultPort
 }
 
+/// Agent holds are leases, not latches: a hold not refreshed within this window
+/// is dropped, so a session that dies without its off-hook (crash, kill, closed
+/// terminal) can't pin the Mac awake forever. Live sessions refresh by simply
+/// re-POSTing /agent/on. `ALLNIGHTER_AGENT_LEASE_SECONDS` env override (min 5)
+/// exists for testing.
+let kAgentLeaseSeconds: TimeInterval = {
+    if let env = ProcessInfo.processInfo.environment["ALLNIGHTER_AGENT_LEASE_SECONDS"],
+       let v = TimeInterval(env), v >= 5 {
+        return v
+    }
+    return 30 * 60
+}()
+
 // MARK: - Agent pulse envelope (verbatim from reference_mockup.swift mode A)
 
 let kGoldCore = NSColor(calibratedRed: 1.00, green: 0.80, blue: 0.25, alpha: 1)
@@ -169,7 +182,8 @@ final class AllNighter: NSObject, NSApplicationDelegate {
     private var listener: NWListener?
     private(set) var isOn = false            // USER display keep-awake switch
     private(set) var lidMode = false         // USER closed-lid switch (persisted)
-    private var agentIDs: Set<String> = []   // ACTIVE agent sessions (in-memory only)
+    /// ACTIVE agent sessions → last lease refresh (in-memory only).
+    private var agentIDs: [String: Date] = [:]
     var agentActive: Bool { !agentIDs.isEmpty }
     private var appliedEffectiveLid = false  // last SUCCESSFULLY applied disablesleep state
     private var needsRecompute = false       // coalesce flag while privileged work in flight
@@ -178,6 +192,8 @@ final class AllNighter: NSObject, NSApplicationDelegate {
     private var sigSources: [DispatchSourceSignal] = []
     /// ~30 Hz redraw timer; non-nil ONLY while agentActive.
     private var pulseTimer: DispatchSourceTimer?
+    /// Lease-expiry sweep timer; non-nil ONLY while agentActive.
+    private var leaseTimer: DispatchSourceTimer?
     /// Discrete phase buckets per 1.0 s cycle (timer resolution → 30 distinct frames).
     private let pulseBucketCount = 30
     /// Last bucket assigned to the status button (skip assign when unchanged).
@@ -470,13 +486,13 @@ final class AllNighter: NSObject, NSApplicationDelegate {
 
     // MARK: - Agent set (agent routes only; effects via applyEffectiveState)
 
-    /// Insert id and recompute. Safe from any queue (hops to main).
+    /// Insert id (or refresh its lease) and recompute. Safe from any queue (hops to main).
     func agentOn(id: String) {
         let work = { [weak self] in
             guard let self = self else { return }
             let wasEmpty = self.agentIDs.isEmpty
-            self.agentIDs.insert(id)
-            if wasEmpty { self.syncPulseTimer() }
+            self.agentIDs[id] = Date()
+            if wasEmpty { self.syncPulseTimer(); self.syncLeaseTimer() }
             self.applyEffectiveState()
         }
         if Thread.isMainThread { work() } else { DispatchQueue.main.async(execute: work) }
@@ -486,8 +502,8 @@ final class AllNighter: NSObject, NSApplicationDelegate {
     func agentOff(id: String) {
         let work = { [weak self] in
             guard let self = self else { return }
-            self.agentIDs.remove(id)
-            if self.agentIDs.isEmpty { self.syncPulseTimer() }
+            self.agentIDs.removeValue(forKey: id)
+            if self.agentIDs.isEmpty { self.syncPulseTimer(); self.syncLeaseTimer() }
             self.applyEffectiveState()
         }
         if Thread.isMainThread { work() } else { DispatchQueue.main.async(execute: work) }
@@ -499,9 +515,41 @@ final class AllNighter: NSObject, NSApplicationDelegate {
             guard let self = self else { return }
             self.agentIDs.removeAll()
             self.syncPulseTimer()
+            self.syncLeaseTimer()
             self.applyEffectiveState()
         }
         if Thread.isMainThread { work() } else { DispatchQueue.main.async(execute: work) }
+    }
+
+    /// Run the lease sweep only while agentActive; cancel when the set empties.
+    /// Cadence is lease/10 clamped to [1 s, 60 s], so an orphaned hold outlives
+    /// its lease by at most ~10% and idle wake-ups stay ≤1/min.
+    private func syncLeaseTimer() {
+        if agentActive {
+            guard leaseTimer == nil else { return }
+            let cadence = max(1.0, min(60.0, kAgentLeaseSeconds / 10.0))
+            let t = DispatchSource.makeTimerSource(queue: .main)
+            t.schedule(deadline: .now() + cadence, repeating: cadence, leeway: .seconds(1))
+            t.setEventHandler { [weak self] in
+                self?.sweepExpiredAgentLeases()
+            }
+            t.resume()
+            leaseTimer = t
+        } else {
+            leaseTimer?.cancel()
+            leaseTimer = nil
+        }
+    }
+
+    /// Drop holds whose lease lapsed (session died without its off-hook).
+    private func sweepExpiredAgentLeases() {
+        let cutoff = Date().addingTimeInterval(-kAgentLeaseSeconds)
+        let expired = agentIDs.filter { $0.value < cutoff }.map { $0.key }
+        guard !expired.isEmpty else { return }
+        for id in expired { agentIDs.removeValue(forKey: id) }
+        NSLog("AllNighter: agent lease expired for \(expired.count) session(s): \(expired.joined(separator: ", "))")
+        if agentIDs.isEmpty { syncPulseTimer(); syncLeaseTimer() }
+        applyEffectiveState()
     }
 
     /// Start ~30 Hz redraw timer only while agentActive; cancel when the set empties.
@@ -655,9 +703,12 @@ final class AllNighter: NSObject, NSApplicationDelegate {
     }
 
     /// Snapshot agent set for status responses (main-thread).
-    private func agentStatusParts() -> (on: Bool, count: Int, list: [String]) {
-        let list = agentIDs.sorted()
-        return (!list.isEmpty, list.count, list)
+    /// `ages` aligns with `list`: seconds since each id's last lease refresh.
+    private func agentStatusParts() -> (on: Bool, count: Int, list: [String], ages: [Int]) {
+        let list = agentIDs.keys.sorted()
+        let now = Date()
+        let ages = list.map { Int(now.timeIntervalSince(agentIDs[$0] ?? now)) }
+        return (!list.isEmpty, list.count, list, ages)
     }
 
     /// Re-establish the persisted closed-lid state at launch, without ever prompting.
@@ -891,8 +942,11 @@ final class AllNighter: NSObject, NSApplicationDelegate {
         case "POST /agent/status", "GET /agent/status", "PUT /agent/status":
             let parts = agentStatusParts()
             let listJSON = parts.list.map { "\"\($0)\"" }.joined(separator: ",")
+            let agesJSON = parts.ages.map(String.init).joined(separator: ",")
             body = "{\"agent\":\"\(parts.on ? "on" : "off")\",\"ids\":\(parts.count)"
-                 + ",\"idList\":[\(listJSON)]}"
+                 + ",\"idList\":[\(listJSON)]"
+                 + ",\"ageSeconds\":[\(agesJSON)]"
+                 + ",\"leaseSeconds\":\(Int(kAgentLeaseSeconds))}"
         default:
             status = "404 Not Found"
             body = "{\"error\":\"unknown route\",\"hint\":\"GET /status | POST /on | POST /off | POST /toggle | POST /lid/on | POST /lid/off | POST /lid/toggle | POST /agent/on | POST /agent/off | POST /agent/clear | POST /agent/status\"}"

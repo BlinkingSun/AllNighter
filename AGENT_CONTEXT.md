@@ -24,10 +24,10 @@ Base URL: `http://127.0.0.1:17893`
 | GET | `/status` | Read all modes | `{"state":"on\|off","closedLid":"on\|off","agent":"on\|off","agentIds":N,"effectiveDisplay":"on\|off","effectiveLid":"on\|off"}` |
 | POST | `/on` `/off` `/toggle` | Display keep-awake (USER switch) | `{"state":"on\|off"}` |
 | POST | `/lid/on` `/lid/off` `/lid/toggle` | Closed-lid keep-alive (USER switch) | `{"closedLid":"on\|off"}` |
-| POST | `/agent/on?id=X` | Hold the AGENT switch (adds `X` to holder set) | `{"agent":"on","ids":N}` |
+| POST | `/agent/on?id=X` | Hold the AGENT switch (adds `X` to holder set, or refreshes its lease) | `{"agent":"on","ids":N}` |
 | POST | `/agent/off?id=X` | Release holder `X` (unknown id = no-op) | `{"agent":"on\|off","ids":N}` |
 | POST | `/agent/clear` | Release all holders | `{"agent":"off","ids":0}` |
-| GET | `/agent/status` | Inspect holders | `{"agent":"on\|off","ids":N,"idList":[...]}` |
+| GET | `/agent/status` | Inspect holders | `{"agent":"on\|off","ids":N,"idList":[...],"ageSeconds":[...],"leaseSeconds":S}` |
 
 `GET` also works on the mutating routes.
 
@@ -39,9 +39,11 @@ Base URL: `http://127.0.0.1:17893`
 - Hold it with your own stable `id` (session id) when you start working; release
   the same id when you finish. Ids form a set — duplicates collapse, other agents'
   holds are unaffected, and the switch releases when the set empties.
-- It is **sticky** (no timeout) and in-memory (app relaunch clears it). If you may
-  have crashed without releasing, `POST /agent/clear` or the menu's *Clear agent
-  keep-awake* recovers.
+- Holds are **leased** (v1.2.0+): a hold not refreshed within `leaseSeconds`
+  (default 30 min) expires on its own. Refresh by re-POSTing `/agent/on` with the
+  same id while you work — duplicate ons are the keepalive, not an error. State is
+  in-memory (app relaunch clears it). Manual recovery still exists: `POST
+  /agent/clear` or the menu's *Clear agent keep-awake*.
 - The user routes (`/on`, `/off`, `/lid/*`) belong to the human. Only use them
   when the user explicitly asks for keep-awake.
 - Agent routes never trigger an admin prompt. If closed-lid can't be applied yet
